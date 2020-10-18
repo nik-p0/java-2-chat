@@ -9,10 +9,12 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.util.Vector;
 
 public class ChatServer implements ServerSocketThreadListener, SocketThreadListener {
     ServerSocketThread thread;
     private final DateFormat DATE_FORMAT = new SimpleDateFormat("HH:mm:ss: ");
+    private Vector<SocketThread> clients = new Vector<>();
 
     public void start(int port) {
         if (thread != null && thread.isAlive()) {
@@ -98,12 +100,16 @@ public class ChatServer implements ServerSocketThreadListener, SocketThreadListe
     @Override
     public synchronized void onSocketReady(SocketThread thread, Socket socket) {
         putLog("Socket ready");
+        clients.add(thread);
 
     }
 
     @Override
     public synchronized void onReceiveString(SocketThread thread, Socket socket, String msg) {
-        thread.sendMessage("echo: " + msg);
+        for (int i = 0; i < clients.size(); i++) {
+            SocketThread client = clients.get(i);
+            client.sendMessage(msg);
+        }
     }
 
     @Override

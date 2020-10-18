@@ -1,9 +1,6 @@
 package ru.geekbrains.java_two.network;
 
-import java.io.Closeable;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.net.Socket;
 
 public class SocketThread extends Thread {
@@ -11,11 +8,13 @@ public class SocketThread extends Thread {
     private final SocketThreadListener listener;
     private final Socket socket;
     private DataOutputStream out;
+    DataInputStream in;
 
     public SocketThread(SocketThreadListener listener, String name, Socket socket) {
         super(name);
         this.socket = socket;
         this.listener = listener;
+
         start();
     }
 
@@ -23,14 +22,16 @@ public class SocketThread extends Thread {
     public void run() {
         try {
             listener.onSocketStart(this, socket);
-            DataInputStream in = new DataInputStream(socket.getInputStream());
+            in = new DataInputStream(socket.getInputStream());
             out = new DataOutputStream(socket.getOutputStream());
             listener.onSocketReady(this, socket);
             while (!isInterrupted()) {
                 String msg = in.readUTF();
                 listener.onReceiveString(this, socket, msg);
             }
-        } catch (IOException e) {
+        } catch (EOFException e) {
+
+        }catch (IOException e) {
             listener.onSocketException(this, e);
         } finally {
             try {
@@ -57,6 +58,7 @@ public class SocketThread extends Thread {
     public synchronized void close() {
         interrupt();
         try {
+            in.close();
             socket.close();
         } catch (IOException e) {
             listener.onSocketException(this, e);
