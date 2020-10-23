@@ -45,6 +45,74 @@ public class ChatServer implements ServerSocketThreadListener, SocketThreadListe
         listener.onChatServerMessage(msg);
     }
 
+    private void handleNonAuthMessage(ClientThread client, String msg) {
+        String[] arr = msg.split(Library.DELIMITER);
+        if (arr.length != 3 || !arr[0].equals(Library.AUTH_REQUEST)) {
+            client.msgFormatError(msg);
+            return;
+        }
+        String login = arr[1];
+        String password = arr[2];
+        String nickname = SqlClient.getNickname(login, password);
+        if (nickname == null) {
+            putLog("Invalid login attempt: " + login);
+            client.authFail();
+            return;
+        } else {
+            ClientThread oldClient = findClientByNickname(nickname);
+            client.authAccept(nickname);
+            if (oldClient == null) {
+                sendToAllAuthorizedClients(Library.getTypeBroadcast("Server", nickname + " connected"));
+            } else {
+                oldClient.reconnect();
+                clients.remove(oldClient);
+            }
+        }
+        sendToAllAuthorizedClients(Library.getUserList(getUsers()));
+    }
+
+    private void handleAuthMessage(ClientThread client, String msg) {
+        String[] arr = msg.split(Library.DELIMITER);
+        String msgType = arr[0];
+        switch (msgType) {
+            case Library.TYPE_BCAST_CLIENT:
+                sendToAllAuthorizedClients(Library.getTypeBroadcast(
+                        client.getNickname(), arr[1]));
+                break;
+            default:
+                client.msgFormatError(msg);
+
+        }
+    }
+
+    private void sendToAllAuthorizedClients(String msg) {
+        for (int i = 0; i < clients.size(); i++) {
+            ClientThread recipient = (ClientThread) clients.get(i);
+            if (!recipient.isAuthorized()) continue;
+            recipient.sendMessage(msg);
+        }
+    }
+
+    private String getUsers() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < clients.size(); i++) {
+            ClientThread client = (ClientThread) clients.get(i);
+            if (!client.isAuthorized()) continue;
+            sb.append(client.getNickname()).append(Library.DELIMITER);
+        }
+        return sb.toString();
+    }
+
+    private synchronized ClientThread findClientByNickname(String nickname) {
+        for (int i = 0; i < clients.size(); i++) {
+            ClientThread client = (ClientThread) clients.get(i);
+            if (!client.isAuthorized()) continue;
+            if (client.getNickname().equals(nickname))
+                return client;
+        }
+        return null;
+    }
+
     /**
      * Server methods
      *
@@ -60,6 +128,9 @@ public class ChatServer implements ServerSocketThreadListener, SocketThreadListe
     public void onServerStop(ServerSocketThread thread) {
         putLog("Server thread stopped");
         SqlClient.disconnect();
+        for (int i = 0; i < clients.size(); i++) {
+            clients.get(i).close();
+        }
     }
 
     @Override
@@ -101,6 +172,13 @@ public class ChatServer implements ServerSocketThreadListener, SocketThreadListe
     @Override
     public synchronized void onSocketStop(SocketThread thread) {
         putLog("Socket stopped");
+        clients.remove(thread);
+        ClientThread client = (ClientThread) thread;
+        if (client.isAuthorized() && !client.isReconnecting()) {
+            sendToAllAuthorizedClients(Library.getTypeBroadcast("Server",
+                    client.getNickname() + " disconnected"));
+        }
+        sendToAllAuthorizedClients(Library.getUserList(getUsers()));
 
     }
 
@@ -117,36 +195,6 @@ public class ChatServer implements ServerSocketThreadListener, SocketThreadListe
             handleAuthMessage(client, msg);
         else
             handleNonAuthMessage(client, msg);
-    }
-
-    private void handleNonAuthMessage(ClientThread client, String msg) {
-        String[] arr = msg.split(Library.DELIMITER);
-        if (arr.length != 3 || !arr[0].equals(Library.AUTH_REQUEST)) {
-            client.msgFormatError(msg);
-            return;
-        }
-        String login = arr[1];
-        String password = arr[2];
-        String nickname = SqlClient.getNickname(login, password);
-        if (nickname == null) {
-            putLog("Invalid login attempt: " + login);
-            client.authFail();
-            return;
-        }
-        client.authAccept(nickname);
-        sendToAllAuthorizedClients(Library.getTypeBroadcast("Server", nickname + " connected"));
-    }
-
-    private void handleAuthMessage(ClientThread client, String msg) {
-        sendToAllAuthorizedClients(Library.getTypeBroadcast(client.getNickname(), msg));
-    }
-
-    private void sendToAllAuthorizedClients(String msg) {
-        for (int i = 0; i < clients.size(); i++) {
-            ClientThread recipient = (ClientThread) clients.get(i);
-            if (!recipient.isAuthorized()) continue;
-            recipient.sendMessage(msg);
-        }
     }
 
     @Override

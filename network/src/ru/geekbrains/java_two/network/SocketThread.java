@@ -2,6 +2,7 @@ package ru.geekbrains.java_two.network;
 
 import java.io.*;
 import java.net.Socket;
+import java.net.SocketException;
 
 public class SocketThread extends Thread {
 
@@ -28,10 +29,12 @@ public class SocketThread extends Thread {
                 String msg = in.readUTF();
                 listener.onReceiveString(this, socket, msg);
             }
-        } catch (EOFException e) {
+        } catch (EOFException | SocketException e) {
             // i don't like this workaround
         } catch (IOException e) {
             listener.onSocketException(this, e);
+            //methodical materials say that we should print stacktrace
+            // and do nothing on exceptions. i like it even less
         } finally {
             try {
                 socket.close();
@@ -55,12 +58,13 @@ public class SocketThread extends Thread {
     }
 
     public synchronized void close() {
-        interrupt();
         try {
             in.close();
+            out.close();
             socket.close();
         } catch (IOException e) {
             listener.onSocketException(this, e);
         }
+        interrupt();
     }
 }
